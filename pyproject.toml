@@ -1,0 +1,26 @@
+[project]
+name = "anytype-loader"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "httpx>=0.28.1",
+    "langchain-core>=1.1.0",
+    "requests>=2.32.0",
+]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+docstring-code-format = true
+
+[dependency-groups]
+dev = [
+    "ruff>=0.14.6",
+]
