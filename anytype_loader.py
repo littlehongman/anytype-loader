@@ -1,12 +1,18 @@
-from __future__ import annotations
-
-import logging
 from typing import AsyncIterator, Dict, Generator, Iterator, List, Optional, Tuple
-
+import asyncio
+import logging
 import httpx
 import requests
-from langchain_core.document_loaders import BaseLoader
-from langchain_core.documents import Document
+
+
+try: 
+    # LangChain v1.x
+    from langchain_core.document_loaders import BaseLoader
+    from langchain_core.documents import Document
+except ImportError:
+    # LangChain v0.x
+    from langchain.document_loaders.base import BaseLoader
+    from langchain.schema import Document
 
 log = logging.getLogger(__name__)
 
@@ -25,6 +31,10 @@ class AnytypeLoader(BaseLoader):
         self.page_size = page_size
         self.timeout = 30
 
+        # Async settings
+        self.max_concurrency = 10
+        self._async_client = None
+
     def lazy_load(self) -> Iterator[Document]:
         for object_id in self._iter_object_ids():
             fetched = self._fetch_object(object_id)
@@ -38,17 +48,22 @@ class AnytypeLoader(BaseLoader):
             )
 
     async def alazy_load(self) -> AsyncIterator[Document]:
-        """Async equivalent of lazy_load using async HTTP helpers."""
+        semaphore = asyncio.Semaphore(self.max_concurrency)
+        
+        async def fetch_with_limit(oid):
+            async with semaphore: 
+                return await self._afetch_object(oid) 
+        
+        tasks = []
         async for object_id in self._aiter_object_ids():
-            fetched = await self._afetch_object(object_id)
-            if fetched is None:
-                continue
-
-            markdown, metadata = fetched
-            yield Document(
-                page_content=markdown,
-                metadata=metadata,
-            )
+            task = asyncio.create_task(fetch_with_limit(object_id))
+            tasks.append(task)
+       
+        for coro in asyncio.as_completed(tasks):
+            fetched = await coro
+            if fetched:
+                markdown, metadata = fetched
+                yield Document(page_content=markdown, metadata=metadata)
 
     def _iter_object_ids(self) -> Generator[str, None, None]:
         offset = 0
@@ -112,12 +127,13 @@ class AnytypeLoader(BaseLoader):
 
     async def _alist_objects(self, limit: int, offset: int) -> Tuple[List[str], bool]:
         url = f"{self.base_url}/v1/spaces/{self.space_id}/objects"
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.get(
-                url,
-                headers=self._headers(),
-                params={"limit": limit, "offset": offset},
-            )
+
+        client = await self._get_client()
+        response = await client.get(
+            url,
+            headers=self._headers(),
+            params={"limit": limit, "offset": offset},
+        )
 
         response.raise_for_status()
         data = response.json()
@@ -185,8 +201,12 @@ class AnytypeLoader(BaseLoader):
 
     async def _afetch_object(self, object_id: str) -> Optional[Tuple[str, Dict]]:
         url = f"{self.base_url}/v1/spaces/{self.space_id}/objects/{object_id}"
-        async with httpx.AsyncClient(timeout=30, headers=self._headers()) as client:
-            response = await client.get(url)
+
+        client = await self._get_client()
+        response = await client.get(
+            url,
+            headers=self._headers(),
+        )
 
         response.raise_for_status()
         data = response.json()
@@ -227,6 +247,15 @@ class AnytypeLoader(BaseLoader):
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         return headers
+
+    async def _get_client(self):
+        if self._async_client is None:
+            self._async_client = httpx.AsyncClient(timeout=30)
+        return self._async_client
+
+    async def aclose(self):
+        if self._async_client:
+            await self._async_client.aclose()
 
     @staticmethod
     def _extract_properties(properties: Optional[List[Dict]]) -> Dict[str, object]:
