@@ -229,21 +229,18 @@ class AnytypeLoader(BaseLoader):
             "space_id": space_id,
             "space_name": self.space_name_map.get(space_id),
             "object_id": object_id,
+            "id": object_id,
             "source": url,
+            "name": obj["name"],
+            "archived": bool(obj["archived"]),
+            "type": obj["type"]["name"]
         }
-        if "archived" in obj:
-            metadata["archived"] = bool(obj.get("archived"))
-
-        # Keep simple scalar fields such as name.
-        for key in ("name",):
-            if key in obj:
-                metadata[key] = obj[key]
 
         # Flatten properties into a dict keyed by property key.
         properties: List[Dict] = obj.get("properties")
         flattened_properties = self._extract_properties(properties)
         if flattened_properties:
-            metadata["properties"] = flattened_properties
+            metadata.update(flattened_properties)
 
         return str(markdown), metadata
 
@@ -274,18 +271,17 @@ class AnytypeLoader(BaseLoader):
             "space_id": space_id,
             "space_name": self.space_name_map.get(space_id),
             "object_id": object_id,
-            "archived": bool(obj.get("archived")),
+            "id": object_id,
             "source": url,
+            "name": obj["name"],
+            "archived": bool(obj["archived"]),
+            "type": obj["type"]["name"]
         }
-
-        for key in ("name",):
-            if key in obj:
-                metadata[key] = obj[key]
 
         properties: List[Dict] = obj.get("properties")
         flattened_properties = self._extract_properties(properties)
         if flattened_properties:
-            metadata["properties"] = flattened_properties
+            metadata.update(flattened_properties)
 
         return str(markdown), metadata
 
@@ -314,6 +310,11 @@ class AnytypeLoader(BaseLoader):
 
         extracted: Dict[str, object] = {}
         allowed_keys = {"tag", "description", "last_opened_date", "last_modified_date", "created_date"}
+        rename_map = {
+            "created_date": "created_at",
+            "last_modified_date": "updated_at",
+            "last_opened_date": "last_opened_at",
+        }
 
         for prop in properties:            
             key = prop["key"]
@@ -336,6 +337,9 @@ class AnytypeLoader(BaseLoader):
             
             fmt = prop.get("format")
             if fmt in ["date", "text"]:
+                if key in rename_map:
+                    key = rename_map[key]
+
                 extracted[key] = prop.get(fmt)
           
             else:
