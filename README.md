@@ -57,7 +57,20 @@ asyncio.run(main())
 Example metadata from one document:
 
 ```json
-{"space_id": "<space_id>", "space_name": "Johnson", "object_id": "<object_id>", "id": "<object_id>", "source": "http://127.0.0.1:31009/v1/spaces/<space_id>/objects/<object_id>", "name": "Pattern - Availability", "archived": false, "type": "Page", "created_at": "2024-11-02T21:20:00Z", "tags": ["testTag"], "updated_at": "2025-11-28T19:17:37Z", "description": "Test Desc", "last_opened_at": "2025-11-28T19:03:43Z"}
+{
+    "space_id": "<space_id>", 
+    "space_name": "Johnson", 
+    "object_id": "<object_id>", 
+    "id": "<object_id>",
+    "name": "Pattern - Availability", 
+    "archived": false, 
+    "type": "Page", 
+    "created_at": "2024-11-02T21:20:00Z", 
+    "tags": ["testTag"], 
+    "updated_at": "2025-11-28T19:17:37Z", 
+    "description": "Test Desc", 
+    "last_opened_at": "2025-11-28T19:03:43Z"
+}
 ```
 
 ### Notes
