@@ -1,9 +1,8 @@
 [project]
 name = "anytype-loader"
 version = "1.0.0"
-description = "LangChain document loader for Anytype spaces."
+description = "Add your description here"
 readme = "README.md"
-license = { file = "LICENSE" }
 requires-python = ">=3.9"
 dependencies = [
     "httpx>=0.24,<1.0",
@@ -15,6 +14,10 @@ dependencies = [
 langchain = [
     "langchain>=0.1,<1.0",
 ]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
 
 [tool.ruff]
 target-version = "py39"
