@@ -1,12 +1,9 @@
-[build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "anytype-loader"
 version = "1.0.0"
-description = "Add your description here"
+description = "LangChain document loader for Anytype spaces."
 readme = "README.md"
+license = { file = "LICENSE" }
 requires-python = ">=3.9"
 dependencies = [
     "httpx>=0.24,<1.0",
