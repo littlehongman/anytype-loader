@@ -28,13 +28,19 @@ class AnytypeLoader(BaseLoader):
         self,
         url: str,
         api_key: str,
-        space_id: str,
+        space_ids: List[str],
         page_size: int = 100,
         query: Optional[str] = None,
     ) -> None:
         self.base_url = url.rstrip("/")
         self.api_key = api_key
-        self.space_id = space_id
+
+        if not space_ids:
+            raise ValueError("space_ids must be provided")
+        self.space_ids = [sid for sid in space_ids if sid]
+        if not self.space_ids:
+            raise ValueError("space_ids must contain at least one non-empty id")
+        
         self.page_size = page_size
         self.query = query
         self.timeout = 30
@@ -44,52 +50,40 @@ class AnytypeLoader(BaseLoader):
         self._async_client = None
 
     def lazy_load(self) -> Iterator[Document]:
-        for object_id in self._iter_object_ids():
-            fetched = self._fetch_object(object_id)
-            if fetched is None:
-                continue
+        for space_id in self.space_ids:
+            for object_id in self._iter_object_ids(space_id):
+                fetched = self._fetch_object(space_id, object_id)
+                if fetched is None:
+                    continue
 
-            markdown, metadata = fetched
-            yield Document(
-                page_content=markdown,
-                metadata=metadata,
-            )
+                markdown, metadata = fetched
+                yield Document(
+                    page_content=markdown,
+                    metadata=metadata,
+                )
 
     async def alazy_load(self) -> AsyncIterator[Document]:
         semaphore = asyncio.Semaphore(self.max_concurrency)
-        
-        async def fetch_with_limit(oid):
-            async with semaphore: 
-                return await self._afetch_object(oid) 
-        
+
+        async def fetch_with_limit(space: str, oid: str):
+            async with semaphore:
+                return await self._afetch_object(space, oid)
+
         tasks = []
-        async for object_id in self._aiter_object_ids():
-            task = asyncio.create_task(fetch_with_limit(object_id))
-            tasks.append(task)
-       
+        for space_id in self.space_ids:
+            async for object_id in self._aiter_object_ids(space_id):
+                tasks.append(asyncio.create_task(fetch_with_limit(space_id, object_id)))
+
         for coro in asyncio.as_completed(tasks):
             fetched = await coro
             if fetched:
                 markdown, metadata = fetched
                 yield Document(page_content=markdown, metadata=metadata)
 
-    def _iter_object_ids(self) -> Generator[str, None, None]:
+    def _iter_object_ids(self, space_id: str) -> Generator[str, None, None]:
         offset = 0
         while True:
-            object_ids, has_more = self._list_objects(limit=self.page_size, offset=offset)
-
-            for object_id in object_ids:
-                yield str(object_id)
-            
-            offset += len(object_ids)
-            
-            if not has_more:
-                break
-
-    async def _aiter_object_ids(self) -> AsyncIterator[str]:
-        offset = 0
-        while True:
-            object_ids, has_more = await self._alist_objects(limit=self.page_size, offset=offset)
+            object_ids, has_more = self._list_objects(space_id=space_id, limit=self.page_size, offset=offset)
 
             for object_id in object_ids:
                 yield str(object_id)
@@ -99,16 +93,29 @@ class AnytypeLoader(BaseLoader):
             if not has_more:
                 break
 
-    def _list_objects(self, limit: int, offset: int) -> Tuple[List[str], bool]:
+    async def _aiter_object_ids(self, space_id: str) -> AsyncIterator[str]:
+        offset = 0
+        while True:
+            object_ids, has_more = await self._alist_objects(space_id=space_id, limit=self.page_size, offset=offset)
+
+            for object_id in object_ids:
+                yield str(object_id)
+
+            offset += len(object_ids)
+
+            if not has_more:
+                break
+
+    def _list_objects(self, space_id: str, limit: int, offset: int) -> Tuple[List[str], bool]:
         endpoint = "search" if self.query else "objects"
-        url = f"{self.base_url}/v1/spaces/{self.space_id}/{endpoint}"
-        
+        url = f"{self.base_url}/v1/spaces/{space_id}/{endpoint}"
+
         kwargs = {
             "headers": self._headers(),
             "params": {"limit": limit, "offset": offset},
             "timeout": self.timeout,
         }
-        
+
         if self.query:
             kwargs["json"] = {"query": self.query}
             response = requests.post(url, **kwargs)
@@ -116,53 +123,32 @@ class AnytypeLoader(BaseLoader):
             response = requests.get(url, **kwargs)
 
         response.raise_for_status()
-        data = response.json()
+        return self._parse_objects_response(response.json())
 
-        if isinstance(data, dict):
-            # Expected schema per docs: {"data": [objects...], "pagination": {...}}
-            objects_section = data.get("data")
-            pagination_info = data.get("pagination")
-
-            if isinstance(objects_section, list):
-                ids: List[str] = []
-                for obj in objects_section:
-                    try:
-                        ids.append(str(obj["id"]))
-                    except Exception:
-                        log.warning("Skipping object without id: %s", obj)
-
-                has_more = False
-                if isinstance(pagination_info, dict):
-                    has_more = bool(pagination_info.get("has_more"))
-
-                return ids, has_more
-
-        log.warning("Unexpected list response structure: %s", data)
-        return ([], False)
-
-    async def _alist_objects(self, limit: int, offset: int) -> Tuple[List[str], bool]:
+    async def _alist_objects(self, space_id: str, limit: int, offset: int) -> Tuple[List[str], bool]:
         client = await self._get_client()
 
         endpoint = "search" if self.query else "objects"
-        url = f"{self.base_url}/v1/spaces/{self.space_id}/{endpoint}"
-        
+        url = f"{self.base_url}/v1/spaces/{space_id}/{endpoint}"
+
         kwargs = {
             "headers": self._headers(),
             "params": {"limit": limit, "offset": offset},
             "timeout": self.timeout,
         }
-        
+
         if self.query:
             kwargs["json"] = {"query": self.query}
-            response = requests.post(url, **kwargs)
+            response = await client.post(url, **kwargs)
         else:
-            response = requests.get(url, **kwargs)
+            response = await client.get(url, **kwargs)
 
         response.raise_for_status()
-        data = response.json()
+        return self._parse_objects_response(response.json())
 
+    @staticmethod
+    def _parse_objects_response(data: object) -> Tuple[List[str], bool]:
         if isinstance(data, dict):
-            # Expected schema per docs: {"data": [objects...], "pagination": {...}}
             objects_section = data.get("data")
             pagination_info = data.get("pagination")
 
@@ -184,8 +170,8 @@ class AnytypeLoader(BaseLoader):
         return ([], False)
 
 
-    def _fetch_object(self, object_id: str) -> Optional[Tuple[str, Dict]]:
-        url = f"{self.base_url}/v1/spaces/{self.space_id}/objects/{object_id}"
+    def _fetch_object(self, space_id: str, object_id: str) -> Optional[Tuple[str, Dict]]:
+        url = f"{self.base_url}/v1/spaces/{space_id}/objects/{object_id}"
         response = requests.get(url, headers=self._headers(), timeout=30)
         response.raise_for_status()
         data = response.json()
@@ -203,7 +189,7 @@ class AnytypeLoader(BaseLoader):
             return None
 
         metadata: Dict = {
-            "space_id": self.space_id,
+            "space_id": space_id,
             "object_id": object_id,
             "source": url,
         }
@@ -221,8 +207,8 @@ class AnytypeLoader(BaseLoader):
 
         return str(markdown), metadata
 
-    async def _afetch_object(self, object_id: str) -> Optional[Tuple[str, Dict]]:
-        url = f"{self.base_url}/v1/spaces/{self.space_id}/objects/{object_id}"
+    async def _afetch_object(self, space_id: str, object_id: str) -> Optional[Tuple[str, Dict]]:
+        url = f"{self.base_url}/v1/spaces/{space_id}/objects/{object_id}"
 
         client = await self._get_client()
         response = await client.get(
@@ -245,7 +231,7 @@ class AnytypeLoader(BaseLoader):
             return None
 
         metadata: Dict = {
-            "space_id": self.space_id,
+            "space_id": space_id,
             "object_id": object_id,
             "source": url,
         }
