@@ -25,7 +25,7 @@ jobs:
 
       - name: Install package + test deps
         run: |
-          uv sync --locked --dev
+          uv sync --dev
       
       - name: Run ruff (lint + format check)
         run: |
