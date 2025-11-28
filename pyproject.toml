@@ -38,4 +38,5 @@ where = ["."]
 [dependency-groups]
 dev = [
     "ruff>=0.14.6",
+    "pytest>=8.2",
 ]
