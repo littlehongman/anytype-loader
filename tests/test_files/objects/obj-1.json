@@ -1,0 +1,18 @@
+{
+  "object": {
+    "object": "object",
+    "id": "obj-1",
+    "name": "Doc 1 - Availability",
+    "archived": false,
+    "space_id": "space-test",
+    "markdown": "# Doc 1 - Availability\nContent for availability.",
+    "type": { "key": "page", "name": "Page" },
+    "properties": [
+      { "key": "created_date", "format": "date", "date": "2024-01-01T00:00:00Z" },
+      { "key": "last_modified_date", "format": "date", "date": "2024-01-02T00:00:00Z" },
+      { "key": "last_opened_date", "format": "date", "date": "2024-01-03T00:00:00Z" },
+      { "key": "tag", "multi_select": [{ "name": "alpha" }] },
+      { "key": "description", "format": "text", "text": "Desc 1" }
+    ]
+  }
+}

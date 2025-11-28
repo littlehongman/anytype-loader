@@ -1,0 +1,17 @@
+{
+  "object": {
+    "object": "object",
+    "id": "obj-2",
+    "name": "Doc 2 - Networking",
+    "archived": false,
+    "space_id": "space-test",
+    "markdown": "# Doc 2 - Networking\nContent for networking.",
+    "type": { "key": "page", "name": "Page" },
+    "properties": [
+      { "key": "created_date", "format": "date", "date": "2024-02-01T00:00:00Z" },
+      { "key": "last_modified_date", "format": "date", "date": "2024-02-02T00:00:00Z" },
+      { "key": "tag", "multi_select": [{ "name": "beta" }] },
+      { "key": "description", "format": "text", "text": "Desc 2" }
+    ]
+  }
+}

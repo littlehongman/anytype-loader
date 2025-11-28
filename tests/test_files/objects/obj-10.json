@@ -1,0 +1,17 @@
+{
+  "object": {
+    "object": "object",
+    "id": "obj-10",
+    "name": "Doc 10 - Coding Notes",
+    "archived": false,
+    "space_id": "space-test",
+    "markdown": "# Doc 10 - Coding Notes\nContent for coding notes.",
+    "type": { "key": "page", "name": "Page" },
+    "properties": [
+      { "key": "created_date", "format": "date", "date": "2024-10-01T00:00:00Z" },
+      { "key": "last_modified_date", "format": "date", "date": "2024-10-02T00:00:00Z" },
+      { "key": "tag", "multi_select": [{ "name": "notes" }] },
+      { "key": "description", "format": "text", "text": "Desc 10" }
+    ]
+  }
+}

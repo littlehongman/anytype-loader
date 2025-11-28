@@ -1,0 +1,17 @@
+{
+  "object": {
+    "object": "object",
+    "id": "obj-7",
+    "name": "Doc 7 - Roadmap",
+    "archived": false,
+    "space_id": "space-test",
+    "markdown": "# Doc 7 - Roadmap\nContent for roadmap.",
+    "type": { "key": "page", "name": "Page" },
+    "properties": [
+      { "key": "created_date", "format": "date", "date": "2024-07-01T00:00:00Z" },
+      { "key": "last_modified_date", "format": "date", "date": "2024-07-02T00:00:00Z" },
+      { "key": "tag", "multi_select": [{ "name": "beta" }] },
+      { "key": "description", "format": "text", "text": "Desc 7" }
+    ]
+  }
+}
