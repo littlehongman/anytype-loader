@@ -1,9 +1,11 @@
 from typing import AsyncIterator, Dict, Generator, Iterator, List, Optional, Tuple
 import asyncio
-import logging
+import time
+import warnings
 
 import httpx
 import requests
+from .exceptions import AnytypeAPIError, AnytypeAuthError
 
 try:
     # LangChain v1.x
@@ -13,8 +15,6 @@ except ImportError:
     # LangChain v0.x
     from langchain.document_loaders.base import BaseLoader
     from langchain.schema import Document
-
-log = logging.getLogger(__name__)
 
 
 class AnytypeLoader(BaseLoader):
@@ -32,6 +32,10 @@ class AnytypeLoader(BaseLoader):
         page_size: int = 100,
         query: Optional[str] = None,
     ) -> None:
+        if not url or not api_key:
+            raise ValueError("url and api_key are required")
+        if not space_names:
+            raise ValueError("At least one space name is required")
         self.base_url = url.rstrip("/")
         self.api_key = api_key
         self.page_size = page_size
@@ -40,6 +44,8 @@ class AnytypeLoader(BaseLoader):
 
         # Async settings
         self.max_concurrency = 10
+        self.max_retries = 3
+        self.retry_backoff = 1.0
         self._async_client = None
         self.space_name_map: Dict[str, str] = {}
 
@@ -50,7 +56,6 @@ class AnytypeLoader(BaseLoader):
         space_names: List[str],
     ) -> List[str]:
         spaces = self._list_spaces()
-        resolved: List[str] = []
         wanted = set(space_names)
 
         for space in spaces:
@@ -58,12 +63,16 @@ class AnytypeLoader(BaseLoader):
                 continue
             sid = space.get("id")
             sname = space.get("name")
-            if sname in wanted and sid:
-                sid_str = str(sid)
-                resolved.append(sid_str)
-                self.space_name_map[sid_str] = str(sname)
 
-        unique_ids = list({sid for sid in resolved if sid})
+            if sname in wanted and sid:
+                self.space_name_map[sid] = str(sname)
+
+        unique_ids = self.space_name_map.keys()
+        missing_names = wanted - set(self.space_name_map.values())
+
+        if missing_names:
+            warnings.warn(f"Skipping unknown spaces: {', '.join(missing_names)}")
+
         if not unique_ids:
             raise ValueError("At least one space name must resolve to an id")
 
@@ -106,6 +115,8 @@ class AnytypeLoader(BaseLoader):
             object_ids, has_more = self._list_objects(
                 space_id=space_id, limit=self.page_size, offset=offset
             )
+            if offset == 0 and not object_ids:
+                warnings.warn(f"No objects returned for space {space_id} (offset=0)")
 
             for object_id in object_ids:
                 yield str(object_id)
@@ -121,6 +132,8 @@ class AnytypeLoader(BaseLoader):
             object_ids, has_more = await self._alist_objects(
                 space_id=space_id, limit=self.page_size, offset=offset
             )
+            if offset == 0 and not object_ids:
+                warnings.warn(f"No objects returned for space {space_id} (offset=0)")
 
             for object_id in object_ids:
                 yield str(object_id)
@@ -142,11 +155,10 @@ class AnytypeLoader(BaseLoader):
 
         if self.query:
             kwargs["json"] = {"query": self.query}
-            response = requests.post(url, **kwargs)
+            response = self._request_with_retries("post", url, **kwargs)
         else:
-            response = requests.get(url, **kwargs)
+            response = self._request_with_retries("get", url, **kwargs)
 
-        response.raise_for_status()
         return self._parse_objects_response(response.json())
 
     async def _alist_objects(
@@ -165,28 +177,27 @@ class AnytypeLoader(BaseLoader):
 
         if self.query:
             kwargs["json"] = {"query": self.query}
-            response = await client.post(url, **kwargs)
+            response = await self._arequest_with_retries(client.post, url, **kwargs)
         else:
-            response = await client.get(url, **kwargs)
+            response = await self._arequest_with_retries(client.get, url, **kwargs)
 
-        response.raise_for_status()
         return self._parse_objects_response(response.json())
 
     def _list_spaces(self) -> List[Dict]:
         """Fetch spaces to resolve names to ids."""
         url = f"{self.base_url}/v1/spaces"
-        response = requests.get(
+        response = self._request_with_retries(
+            "get",
             url,
             headers=self._headers(),
             params={"limit": 100, "offset": 0},
             timeout=self.timeout,
         )
-        response.raise_for_status()
         data = response.json()
         spaces = data.get("data") if isinstance(data, dict) else None
         if isinstance(spaces, list):
             return spaces  # type: ignore[return-value]
-        log.warning("Unexpected list spaces response structure: %s", data)
+        warnings.warn("Unexpected list spaces response structure; no spaces returned")
         return []
 
     @staticmethod
@@ -198,10 +209,7 @@ class AnytypeLoader(BaseLoader):
             if isinstance(objects_section, list):
                 ids: List[str] = []
                 for obj in objects_section:
-                    try:
-                        ids.append(str(obj["id"]))
-                    except Exception:
-                        log.warning("Skipping object without id: %s", obj)
+                    ids.append(obj["id"])
 
                 has_more = False
                 if isinstance(pagination_info, dict):
@@ -209,26 +217,35 @@ class AnytypeLoader(BaseLoader):
 
                 return ids, has_more
 
-        log.warning("Unexpected list response structure: %s", data)
+        warnings.warn("Unexpected list response structure; treating as empty result")
         return ([], False)
 
     def _fetch_object(self, space_id: str, object_id: str) -> Optional[Tuple[str, Dict]]:
         url = f"{self.base_url}/v1/spaces/{space_id}/objects/{object_id}"
-        response = requests.get(url, headers=self._headers(), timeout=30)
-        response.raise_for_status()
+        response = self._request_with_retries("get", url, headers=self._headers(), timeout=30)
         data = response.json()
 
         # Expected schema per docs: {"object": {...}}
         obj = data.get("object") if isinstance(data, dict) else None
 
         if not isinstance(obj, dict):
-            log.warning("Unexpected object response for %s: %s", object_id, data)
-            return None
+            raise AnytypeAPIError(f"Malformed object response for {object_id}: {data}")
 
         markdown = obj.get("markdown")
         if markdown is None:
-            log.warning("No markdown content for object %s", object_id)
+            warnings.warn(f"No markdown content for object {object_id}; skipping")
             return None
+
+        obj_type = None
+        if isinstance(obj.get("type"), dict):
+            obj_type = obj["type"].get("name")
+        if obj_type is None:
+            warnings.warn(f"Missing type for object {object_id}; using 'unknown'")
+            obj_type = "unknown"
+
+        name = obj.get("name") or "untitled"
+        if obj.get("name") is None:
+            warnings.warn(f"Missing name for object {object_id}; using 'untitled'")
 
         metadata: Dict = {
             "space_id": space_id,
@@ -236,9 +253,9 @@ class AnytypeLoader(BaseLoader):
             "object_id": object_id,
             "id": object_id,
             "source": url,
-            "name": obj["name"],
-            "archived": bool(obj["archived"]),
-            "type": obj["type"]["name"],
+            "name": name,
+            "archived": bool(obj.get("archived")),
+            "type": obj_type,
         }
 
         # Flatten properties into a dict keyed by property key.
@@ -253,24 +270,33 @@ class AnytypeLoader(BaseLoader):
         url = f"{self.base_url}/v1/spaces/{space_id}/objects/{object_id}"
 
         client = await self._get_client()
-        response = await client.get(
+        response = await self._arequest_with_retries(
+            client.get,
             url,
             headers=self._headers(),
         )
-
-        response.raise_for_status()
         data = response.json()
 
         obj = data.get("object") if isinstance(data, dict) else None
 
         if not isinstance(obj, dict):
-            log.warning("Unexpected object response for %s: %s", object_id, data)
-            return None
+            raise AnytypeAPIError(f"Malformed object response for {object_id}: {data}")
 
         markdown = obj.get("markdown")
         if markdown is None:
-            log.warning("No markdown content for object %s", object_id)
+            warnings.warn(f"No markdown content for object {object_id}; skipping")
             return None
+
+        obj_type = None
+        if isinstance(obj.get("type"), dict):
+            obj_type = obj["type"].get("name")
+        if obj_type is None:
+            warnings.warn(f"Missing type for object {object_id}; using 'unknown'")
+            obj_type = "unknown"
+
+        name = obj.get("name") or "untitled"
+        if obj.get("name") is None:
+            warnings.warn(f"Missing name for object {object_id}; using 'untitled'")
 
         metadata: Dict = {
             "space_id": space_id,
@@ -278,9 +304,9 @@ class AnytypeLoader(BaseLoader):
             "object_id": object_id,
             "id": object_id,
             "source": url,
-            "name": obj["name"],
-            "archived": bool(obj["archived"]),
-            "type": obj["type"]["name"],
+            "name": name,
+            "archived": bool(obj.get("archived")),
+            "type": obj_type,
         }
 
         properties: List[Dict] = obj.get("properties")
@@ -307,6 +333,13 @@ class AnytypeLoader(BaseLoader):
     async def aclose(self):
         if self._async_client:
             await self._async_client.aclose()
+            self._async_client = None
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        await self.aclose()
 
     @staticmethod
     def _extract_properties(properties: Optional[List[Dict]]) -> Dict[str, object]:
@@ -328,7 +361,7 @@ class AnytypeLoader(BaseLoader):
         }
 
         for prop in properties:
-            key = prop["key"]
+            key = prop.get("key")
 
             if key not in allowed_keys:
                 continue
@@ -357,3 +390,58 @@ class AnytypeLoader(BaseLoader):
                 continue
 
         return extracted
+
+    def _request_with_retries(self, method: str, url: str, **kwargs):
+        attempt = 0
+        while True:
+            try:
+                response = requests.request(method, url, **kwargs)
+            except requests.RequestException as exc:
+                raise AnytypeAPIError(f"Request to {url} failed: {exc}") from exc
+            if response.status_code in {429, 503} and attempt < self.max_retries:
+                warnings.warn(
+                    f"Rate limited ({response.status_code}); retrying {attempt + 1}/{self.max_retries}"
+                )
+                attempt += 1
+                time.sleep(self.retry_backoff * attempt)
+                continue
+            self._raise_for_status(response, url)
+            return response
+
+    async def _arequest_with_retries(self, func, url: str, **kwargs):
+        attempt = 0
+        while True:
+            try:
+                response = await func(url, **kwargs)
+            except httpx.HTTPError as exc:
+                raise AnytypeAPIError(f"Request to {url} failed: {exc}") from exc
+            if response.status_code in {429, 503} and attempt < self.max_retries:
+                warnings.warn(
+                    f"Rate limited ({response.status_code}); retrying {attempt + 1}/{self.max_retries}"
+                )
+                attempt += 1
+                await asyncio.sleep(self.retry_backoff * attempt)
+                continue
+            self._raise_for_status(response, url)
+            return response
+
+    def _raise_for_status(self, response, url: str):
+        if response.status_code < 400:
+            return
+
+        detail = ""
+        try:
+            payload = response.json()
+            if isinstance(payload, dict):
+                detail = payload.get("message") or payload.get("error") or ""
+        except Exception:
+            detail = response.text[:200] if hasattr(response, "text") else ""
+
+        if response.status_code in {401, 403}:
+            raise AnytypeAuthError(
+                f"Authentication failed for {url}: {detail or response.status_code}"
+            )
+
+        raise AnytypeAPIError(
+            f"Request failed ({response.status_code}) for {url}: {detail or 'no detail'}"
+        )
