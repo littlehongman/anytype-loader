@@ -28,19 +28,12 @@ class AnytypeLoader(BaseLoader):
         self,
         url: str,
         api_key: str,
-        space_ids: List[str],
+        space_names: List[str],
         page_size: int = 100,
         query: Optional[str] = None,
     ) -> None:
         self.base_url = url.rstrip("/")
         self.api_key = api_key
-
-        if not space_ids:
-            raise ValueError("space_ids must be provided")
-        self.space_ids = [sid for sid in space_ids if sid]
-        if not self.space_ids:
-            raise ValueError("space_ids must contain at least one non-empty id")
-        
         self.page_size = page_size
         self.query = query
         self.timeout = 30
@@ -48,6 +41,28 @@ class AnytypeLoader(BaseLoader):
         # Async settings
         self.max_concurrency = 10
         self._async_client = None
+
+        self.space_ids = self._resolve_space_ids(space_names)
+
+    def _resolve_space_ids(
+        self,
+        space_names: List[str],
+    ) -> List[str]:
+
+        spaces = self._list_spaces()
+        space_ids = set()
+        wanted = set(space_names)
+
+        for space in spaces:
+            if not isinstance(space, dict):
+                continue
+            if space.get("name") in wanted and space.get("id"):
+                space_ids.add(str(space["id"]))
+        
+        if not space_ids:
+            raise ValueError("At least one space name must resolve to an id")
+
+        return space_ids
 
     def lazy_load(self) -> Iterator[Document]:
         for space_id in self.space_ids:
@@ -145,6 +160,23 @@ class AnytypeLoader(BaseLoader):
 
         response.raise_for_status()
         return self._parse_objects_response(response.json())
+
+    def _list_spaces(self) -> List[Dict]:
+        """Fetch spaces to resolve names to ids."""
+        url = f"{self.base_url}/v1/spaces"
+        response = requests.get(
+            url,
+            headers=self._headers(),
+            params={"limit": 100, "offset": 0},
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
+        data = response.json()
+        spaces = data.get("data") if isinstance(data, dict) else None
+        if isinstance(spaces, list):
+            return spaces  # type: ignore[return-value]
+        log.warning("Unexpected list spaces response structure: %s", data)
+        return []
 
     @staticmethod
     def _parse_objects_response(data: object) -> Tuple[List[str], bool]:
