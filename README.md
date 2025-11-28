@@ -1,15 +1,17 @@
-## Anytype Loader
+# Anytype Loader
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Community loader for Anytype spaces. Supports sync and async loading.
 
-### Installation
+## Installation
 
 ```bash
 pip install anytype-loader            # defaults to langchain-core (1.x)
 # pip install anytype-loader[langchain]  # add langchain 0.x support
 ```
 
-### Basic usage (sync)
+
+## Basic usage (sync)
 
 ```python
 from anytype_loader import AnytypeLoader
@@ -25,7 +27,7 @@ loader = AnytypeLoader(
 docs = list(loader.lazy_load())
 ```
 
-### Basic usage (async)
+## Basic usage (async)
 
 ```python
 import asyncio
@@ -45,12 +47,18 @@ async def main():
 asyncio.run(main())
 ```
 
-### What it does
+## What it does
 
 - Resolves provided `space_names` via `/v1/spaces` to get IDs.
 - Lists objects via `/v1/spaces/:space_id/objects` (or `/v1/spaces/:space_id/search` when `query` is set) with pagination (`limit`/`offset`).
 - Fetches each object via `/v1/spaces/:space_id/objects/:object_id`.
 - Returns `Document` objects with `markdown` content and flattened metadata including: `space_id`, `space_name`, `object_id`, `name`, `archived`, `type`, tags (tag names), and selected dates (`created_at`, `updated_at`, `last_opened_at` when present).
+
+Example metadata from one document:
+
+```json
+{"space_id": "<space_id>", "space_name": "Johnson", "object_id": "<object_id>", "id": "<object_id>", "source": "http://127.0.0.1:31009/v1/spaces/<space_id>/objects/<object_id>", "name": "Pattern - Availability", "archived": false, "type": "Page", "created_at": "2024-11-02T21:20:00Z", "tags": ["testTag"], "updated_at": "2025-11-28T19:17:37Z", "description": "Test Desc", "last_opened_at": "2025-11-28T19:03:43Z"}
+```
 
 ### Notes
 
