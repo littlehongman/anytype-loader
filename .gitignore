@@ -8,6 +8,3 @@ wheels/
 
 # Virtual environments
 .venv
-
-# Test file
-test.py

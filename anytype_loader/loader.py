@@ -1,11 +1,11 @@
 from typing import AsyncIterator, Dict, Generator, Iterator, List, Optional, Tuple
 import asyncio
 import logging
+
 import httpx
 import requests
 
-
-try: 
+try:
     # LangChain v1.x
     from langchain_core.document_loaders import BaseLoader
     from langchain_core.documents import Document
@@ -103,7 +103,9 @@ class AnytypeLoader(BaseLoader):
     def _iter_object_ids(self, space_id: str) -> Generator[str, None, None]:
         offset = 0
         while True:
-            object_ids, has_more = self._list_objects(space_id=space_id, limit=self.page_size, offset=offset)
+            object_ids, has_more = self._list_objects(
+                space_id=space_id, limit=self.page_size, offset=offset
+            )
 
             for object_id in object_ids:
                 yield str(object_id)
@@ -116,7 +118,9 @@ class AnytypeLoader(BaseLoader):
     async def _aiter_object_ids(self, space_id: str) -> AsyncIterator[str]:
         offset = 0
         while True:
-            object_ids, has_more = await self._alist_objects(space_id=space_id, limit=self.page_size, offset=offset)
+            object_ids, has_more = await self._alist_objects(
+                space_id=space_id, limit=self.page_size, offset=offset
+            )
 
             for object_id in object_ids:
                 yield str(object_id)
@@ -145,7 +149,9 @@ class AnytypeLoader(BaseLoader):
         response.raise_for_status()
         return self._parse_objects_response(response.json())
 
-    async def _alist_objects(self, space_id: str, limit: int, offset: int) -> Tuple[List[str], bool]:
+    async def _alist_objects(
+        self, space_id: str, limit: int, offset: int
+    ) -> Tuple[List[str], bool]:
         client = await self._get_client()
 
         endpoint = "search" if self.query else "objects"
@@ -206,7 +212,6 @@ class AnytypeLoader(BaseLoader):
         log.warning("Unexpected list response structure: %s", data)
         return ([], False)
 
-
     def _fetch_object(self, space_id: str, object_id: str) -> Optional[Tuple[str, Dict]]:
         url = f"{self.base_url}/v1/spaces/{space_id}/objects/{object_id}"
         response = requests.get(url, headers=self._headers(), timeout=30)
@@ -233,7 +238,7 @@ class AnytypeLoader(BaseLoader):
             "source": url,
             "name": obj["name"],
             "archived": bool(obj["archived"]),
-            "type": obj["type"]["name"]
+            "type": obj["type"]["name"],
         }
 
         # Flatten properties into a dict keyed by property key.
@@ -275,7 +280,7 @@ class AnytypeLoader(BaseLoader):
             "source": url,
             "name": obj["name"],
             "archived": bool(obj["archived"]),
-            "type": obj["type"]["name"]
+            "type": obj["type"]["name"],
         }
 
         properties: List[Dict] = obj.get("properties")
@@ -309,14 +314,20 @@ class AnytypeLoader(BaseLoader):
             return {}
 
         extracted: Dict[str, object] = {}
-        allowed_keys = {"tag", "description", "last_opened_date", "last_modified_date", "created_date"}
+        allowed_keys = {
+            "tag",
+            "description",
+            "last_opened_date",
+            "last_modified_date",
+            "created_date",
+        }
         rename_map = {
             "created_date": "created_at",
             "last_modified_date": "updated_at",
             "last_opened_date": "last_opened_at",
         }
 
-        for prop in properties:            
+        for prop in properties:
             key = prop["key"]
 
             if key not in allowed_keys:
@@ -334,14 +345,13 @@ class AnytypeLoader(BaseLoader):
                     extracted["tags"] = names
                 continue
 
-            
             fmt = prop.get("format")
             if fmt in ["date", "text"]:
                 if key in rename_map:
                     key = rename_map[key]
 
                 extracted[key] = prop.get(fmt)
-          
+
             else:
                 # "format": "objects" is not supported for now
                 continue
