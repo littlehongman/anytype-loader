@@ -41,6 +41,7 @@ class AnytypeLoader(BaseLoader):
         # Async settings
         self.max_concurrency = 10
         self._async_client = None
+        self.space_name_map: Dict[str, str] = {}
 
         self.space_ids = self._resolve_space_ids(space_names)
 
@@ -48,21 +49,25 @@ class AnytypeLoader(BaseLoader):
         self,
         space_names: List[str],
     ) -> List[str]:
-
         spaces = self._list_spaces()
-        space_ids = set()
+        resolved: List[str] = []
         wanted = set(space_names)
 
         for space in spaces:
             if not isinstance(space, dict):
                 continue
-            if space.get("name") in wanted and space.get("id"):
-                space_ids.add(str(space["id"]))
-        
-        if not space_ids:
+            sid = space.get("id")
+            sname = space.get("name")
+            if sname in wanted and sid:
+                sid_str = str(sid)
+                resolved.append(sid_str)
+                self.space_name_map[sid_str] = str(sname)
+
+        unique_ids = list({sid for sid in resolved if sid})
+        if not unique_ids:
             raise ValueError("At least one space name must resolve to an id")
 
-        return space_ids
+        return unique_ids
 
     def lazy_load(self) -> Iterator[Document]:
         for space_id in self.space_ids:
@@ -222,6 +227,7 @@ class AnytypeLoader(BaseLoader):
 
         metadata: Dict = {
             "space_id": space_id,
+            "space_name": self.space_name_map.get(space_id),
             "object_id": object_id,
             "source": url,
         }
@@ -264,6 +270,7 @@ class AnytypeLoader(BaseLoader):
 
         metadata: Dict = {
             "space_id": space_id,
+            "space_name": self.space_name_map.get(space_id),
             "object_id": object_id,
             "source": url,
         }
