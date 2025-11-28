@@ -231,6 +231,8 @@ class AnytypeLoader(BaseLoader):
             "object_id": object_id,
             "source": url,
         }
+        if "archived" in obj:
+            metadata["archived"] = bool(obj.get("archived"))
 
         # Keep simple scalar fields such as name.
         for key in ("name",):
@@ -272,6 +274,7 @@ class AnytypeLoader(BaseLoader):
             "space_id": space_id,
             "space_name": self.space_name_map.get(space_id),
             "object_id": object_id,
+            "archived": bool(obj.get("archived")),
             "source": url,
         }
 
@@ -310,21 +313,33 @@ class AnytypeLoader(BaseLoader):
             return {}
 
         extracted: Dict[str, object] = {}
-        allowed_keys = {"last_opened_date", "last_modified_date", "created_date"}
-        for prop in properties:
-            if not isinstance(prop, dict):
-                continue
-            key = prop.get("key")
-            if not key or key not in allowed_keys:
+        allowed_keys = {"tag", "description", "last_opened_date", "last_modified_date", "created_date"}
+
+        for prop in properties:            
+            key = prop["key"]
+
+            if key not in allowed_keys:
                 continue
 
-            # Prefer explicit value fields; fall back to any typed payload.
-            value = None
-            for candidate in ("value", "date", "number", "text", "bool"):
-                if candidate in prop:
-                    value = prop[candidate]
-                    break
+            if key == "tag":
+                items = prop.get("multi_select")
+                if not isinstance(items, list):
+                    continue
+                names: List[str] = []
+                for tag in items:
+                    if isinstance(tag, dict) and tag.get("name"):
+                        names.append(str(tag["name"]))
+                if names:
+                    extracted["tags"] = names
+                continue
 
-            extracted[str(key)] = value
+            
+            fmt = prop.get("format")
+            if fmt in ["date", "text"]:
+                extracted[key] = prop.get(fmt)
+          
+            else:
+                # "format": "objects" is not supported for now
+                continue
 
         return extracted
