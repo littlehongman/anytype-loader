@@ -16,8 +16,9 @@ from anytype_loader import AnytypeLoader
 loader = AnytypeLoader(
     url="http://127.0.0.1:31009",
     api_key="YOUR_API_KEY",
-    space_id="YOUR_SPACE_ID",
+    space_names=["Personal", "Work"],
     page_size=50,
+    query="project",  # optional: use space search endpoint instead of full listing
 )
 
 docs = list(loader.lazy_load())
@@ -33,20 +34,22 @@ async def main():
     loader = AnytypeLoader(
         url="http://127.0.0.1:31009",
         api_key="YOUR_API_KEY",
-        space_id="YOUR_SPACE_ID",
+        space_names=["Your Space"],
         page_size=50,
     )
     docs = [doc async for doc in loader.alazy_load()]
     print(len(docs))
+    await loader.aclose()
 
 asyncio.run(main())
 ```
 
 ### What it does
 
-- Lists objects via `/v1/spaces/:space_id/objects` with pagination (`limit`/`offset`).
+- Resolves provided `space_names` via `/v1/spaces` to get IDs.
+- Lists objects via `/v1/spaces/:space_id/objects` (or `/v1/spaces/:space_id/search` when `query` is set) with pagination (`limit`/`offset`).
 - Fetches each object via `/v1/spaces/:space_id/objects/:object_id`.
-- Returns `Document` objects with the `markdown` field as content and metadata including `space_id`, `object_id`, `name`, and selected date properties (`last_opened_date`, `last_modified_date`, `created_date`).
+- Returns `Document` objects with `markdown` content and flattened metadata including: `space_id`, `space_name`, `object_id`, `name`, `archived`, `type`, tags (tag names), and selected dates (`created_at`, `updated_at`, `last_opened_at` when present).
 
 ### Notes
 
