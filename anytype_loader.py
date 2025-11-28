@@ -24,11 +24,19 @@ class AnytypeLoader(BaseLoader):
     then fetches each object's markdown content.
     """
 
-    def __init__(self, url: str, api_key: str, space_id: str, page_size: int = 100) -> None:
+    def __init__(
+        self,
+        url: str,
+        api_key: str,
+        space_id: str,
+        page_size: int = 100,
+        query: Optional[str] = None,
+    ) -> None:
         self.base_url = url.rstrip("/")
         self.api_key = api_key
         self.space_id = space_id
         self.page_size = page_size
+        self.query = query
         self.timeout = 30
 
         # Async settings
@@ -92,13 +100,20 @@ class AnytypeLoader(BaseLoader):
                 break
 
     def _list_objects(self, limit: int, offset: int) -> Tuple[List[str], bool]:
-        url = f"{self.base_url}/v1/spaces/{self.space_id}/objects"
-        response = requests.get(
-            url,
-            headers=self._headers(),
-            params={"limit": limit, "offset": offset},
-            timeout=self.timeout,
-        )
+        endpoint = "search" if self.query else "objects"
+        url = f"{self.base_url}/v1/spaces/{self.space_id}/{endpoint}"
+        
+        kwargs = {
+            "headers": self._headers(),
+            "params": {"limit": limit, "offset": offset},
+            "timeout": self.timeout,
+        }
+        
+        if self.query:
+            kwargs["json"] = {"query": self.query}
+            response = requests.post(url, **kwargs)
+        else:
+            response = requests.get(url, **kwargs)
 
         response.raise_for_status()
         data = response.json()
@@ -126,14 +141,22 @@ class AnytypeLoader(BaseLoader):
         return ([], False)
 
     async def _alist_objects(self, limit: int, offset: int) -> Tuple[List[str], bool]:
-        url = f"{self.base_url}/v1/spaces/{self.space_id}/objects"
-
         client = await self._get_client()
-        response = await client.get(
-            url,
-            headers=self._headers(),
-            params={"limit": limit, "offset": offset},
-        )
+
+        endpoint = "search" if self.query else "objects"
+        url = f"{self.base_url}/v1/spaces/{self.space_id}/{endpoint}"
+        
+        kwargs = {
+            "headers": self._headers(),
+            "params": {"limit": limit, "offset": offset},
+            "timeout": self.timeout,
+        }
+        
+        if self.query:
+            kwargs["json"] = {"query": self.query}
+            response = requests.post(url, **kwargs)
+        else:
+            response = requests.get(url, **kwargs)
 
         response.raise_for_status()
         data = response.json()
@@ -160,7 +183,6 @@ class AnytypeLoader(BaseLoader):
         log.warning("Unexpected list response structure: %s", data)
         return ([], False)
 
-           
 
     def _fetch_object(self, object_id: str) -> Optional[Tuple[str, Dict]]:
         url = f"{self.base_url}/v1/spaces/{self.space_id}/objects/{object_id}"
