@@ -5,7 +5,8 @@ Community loader for Anytype spaces. Supports sync and async loading.
 ### Installation
 
 ```bash
-pip install anytype-loader
+pip install anytype-loader            # defaults to langchain-core (1.x)
+# pip install anytype-loader[langchain]  # add langchain 0.x support
 ```
 
 ### Basic usage (sync)
