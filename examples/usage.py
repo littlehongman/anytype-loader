@@ -5,7 +5,6 @@ This script demonstrates both sync and async loading. Replace the placeholder
 values with your own API endpoint, key, and space ID before running.
 """
 
-import time
 import asyncio
 from anytype_loader import AnytypeLoader
 
@@ -24,13 +23,11 @@ def run_sync():
         query="Pattern - Availability",
         # query="project",  # uncomment to use space search instead of list
     )
-    docs = list(loader.lazy_load())
-    print(f"sync loaded docs: {len(docs)}")
-    for doc in docs[:3]:
-        print(f"- {doc.metadata.get('name', 'unnamed')} ({doc.metadata.get('object_id')})")
 
-    print(doc.metadata)
-    print("Time Spent: ", (time.time() - start))
+    docs = loader.load()
+
+    for doc in docs[:3]:
+        print(f"- {doc.metadata.get('name')} ({doc.metadata.get('object_id')})")
 
 
 async def run_async():
@@ -40,19 +37,17 @@ async def run_async():
         api_key=API_KEY,
         space_names=SPACE_NAMES,
         page_size=20,
-        query="Pattern - Availability",  # uncomment to use space search instead of list
+        # query="project",  # uncomment to use space search instead of list
     )
-    docs = [doc async for doc in loader.alazy_load()]
-    print(f"async loaded docs: {len(docs)}")
+
+    docs = await loader.aload()
+
     for doc in docs[:3]:
-        print(f"- {doc.metadata.get('name', 'unnamed')} ({doc.metadata.get('object_id')})")
+        print(f"- {doc.metadata.get('name')} ({doc.metadata.get('object_id')})")
+
     await loader.aclose()
-
-    print(doc.metadata)
-
-    print("Time Spent: ", (time.time() - start))
 
 
 if __name__ == "__main__":
-    # run_sync()
+    run_sync()
     asyncio.run(run_async())
