@@ -31,7 +31,7 @@ class AnytypeLoader(BaseLoader):
         space_names: List[str],
         page_size: int = 100,
         query: Optional[str] = None,
-        max_concurrency: int = 10
+        max_concurrency: int = 10,
     ) -> None:
         if not url or not api_key:
             raise ValueError("url and api_key are required")
