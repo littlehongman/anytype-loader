@@ -14,13 +14,11 @@ SPACE_NAMES = ["Space 1", "Space 2"]
 
 
 def run_sync():
-    start = time.time()
     loader = AnytypeLoader(
         url=API_URL,
         api_key=API_KEY,
         space_names=SPACE_NAMES,
         page_size=20,
-        query="Pattern - Availability",
         # query="project",  # uncomment to use space search instead of list
     )
 
@@ -31,7 +29,6 @@ def run_sync():
 
 
 async def run_async():
-    start = time.time()
     loader = AnytypeLoader(
         url=API_URL,
         api_key=API_KEY,
