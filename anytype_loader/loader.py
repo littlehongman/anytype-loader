@@ -31,6 +31,7 @@ class AnytypeLoader(BaseLoader):
         space_names: List[str],
         page_size: int = 100,
         query: Optional[str] = None,
+        max_concurrency: int = 10
     ) -> None:
         if not url or not api_key:
             raise ValueError("url and api_key are required")
@@ -43,12 +44,13 @@ class AnytypeLoader(BaseLoader):
         self.timeout = 30
 
         # Async settings
-        self.max_concurrency = 10
+        self.max_concurrency = max_concurrency
         self.max_retries = 3
         self.retry_backoff = 1.0
         self._async_client = None
-        self.space_name_map: Dict[str, str] = {}
 
+        # Space info
+        self.space_name_map: Dict[str, str] = {}
         self.space_ids = self._resolve_space_ids(space_names)
 
     def _resolve_space_ids(
